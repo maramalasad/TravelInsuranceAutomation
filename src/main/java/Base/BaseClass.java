@@ -4,6 +4,8 @@ import ActionDriver.Action;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.ie.InternetExplorerDriver;
 import org.testng.annotations.AfterMethod;
@@ -73,8 +75,19 @@ public abstract class BaseClass {
         }
 
         String bn = browserName.toLowerCase();
+        boolean inCi = "true".equalsIgnoreCase(System.getenv("GITHUB_ACTIONS"));
         if (bn.contains("chrome")) {
-            driver = new ChromeDriver();
+            ChromeOptions options = new ChromeOptions();
+            if (inCi) {
+                options.addArguments(
+                        "--headless=new",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--window-size=1920,1080"
+                );
+            }
+            driver = new ChromeDriver(options);
         } else if (bn.contains("firefox") || bn.contains("fire fox") || bn.contains("ff")) {
             driver = new FirefoxDriver();
         } else if (bn.contains("ie") || bn.contains("internet explorer")) {
@@ -83,13 +96,19 @@ public abstract class BaseClass {
 
         action.implicitWait(driver, 10);
         action.pageLoadTimeOut(driver, 30);
-        driver.manage().window().maximize();
+        try {
+            if (!inCi) {
+                driver.manage().window().maximize();
+            } else {
+                driver.manage().window().setSize(new Dimension(1920, 1080));
+            }
+        } catch (Exception ignored) {}
         String url = prop != null ? prop.getProperty("url") : null;
         if (url == null || url.isEmpty()) {
             url = "about:blank";
         }
         driver.get(url);
-        System.out.println("✓ Application launched: " + prop.getProperty("url"));
+        System.out.println("✓ Application launched: " + url);
     }
 
     /**

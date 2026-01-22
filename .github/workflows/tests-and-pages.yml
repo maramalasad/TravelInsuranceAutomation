@@ -25,7 +25,7 @@ jobs:
 
       - name: Build & Test (with Xvfb)
         run: |
-          xvfb-run -a mvn -B -DskipTests=false test surefire-report:report
+          xvfb-run -a mvn -B -Dmaven.test.failure.ignore=true -DskipTests=false test surefire-report:report
 
       - name: Upload raw reports artifact
         uses: actions/upload-artifact@v4

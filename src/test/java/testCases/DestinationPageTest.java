@@ -5,6 +5,7 @@ import org.testng.Assert;
 import org.testng.annotations.Test;
 import pagesObject.DestinationPage;
 import pagesObject.TravelPolicyPage;
+import utils.DateUtils;
 
 public class DestinationPageTest extends BaseClass {
 
@@ -98,77 +99,63 @@ public class DestinationPageTest extends BaseClass {
 
     //setDefaultDates
 
-    @Test
-    public void selectEurope_setDefaultDates() {
-        DestinationPage destinationPage = openDestination();
-        boolean clicked = destinationPage.clickEurope();
-        Assert.assertTrue(clicked, "Failed to click Europe tile");
-        boolean movedToDate = destinationPage.clickNextAndWaitForDate();
-        Assert.assertTrue(movedToDate, "Did not navigate to date step");
-        boolean datesSet = destinationPage.selectDefaultDates();
-        Assert.assertTrue(datesSet, "Failed to set default dates (start in 7 days, end 30 days later)");
-        System.out.println("Selected default dates on Date step: " + driver.getCurrentUrl());
-    }
+    
+    
+
+    
 
     @Test
-    public void selectAsia_setRelativeDates() {
+    public void destination_withoutRegion_showsGeneralErrorOnNext() {
         DestinationPage destinationPage = openDestination();
-        boolean clicked = destinationPage.clickAsia();
-        Assert.assertTrue(clicked, "Failed to click Asia tile");
-        boolean movedToDate = destinationPage.clickNextAndWaitForDate();
-        Assert.assertTrue(movedToDate, "Did not navigate to date step");
-        boolean datesSet = destinationPage.selectDatesRelative(7, 30);
-        Assert.assertTrue(datesSet, "Failed to set dates: start in 7 days, return 30 days later");
-        System.out.println("Selected Asia trip dates (7/30) on Date step: " + driver.getCurrentUrl());
+        // Do not select any region; click Next and capture error
+        String error = destinationPage.clickNextWithoutRegionAndGetError();
+        Assert.assertNotNull(error, "Expected a validation message when no region is selected");
+        // Expected message: ".שכחת לבחור יעד מרוב התרגשות? נא לסמן אחד"
+        Assert.assertTrue(error.contains("שכחת לבחור יעד") && error.contains("נא לסמן אחד"),
+                "Unexpected error text when no region selected. Actual: " + error);
+        System.out.println("Validation (no region): " + error);
+    }
+
+    
+
+    @Test
+    public void datePicker_selectStartPlus7_andEndPlus30_thenProceed() {
+        DestinationPage destinationPage = openDestination();
+        Assert.assertTrue(destinationPage.clickEurope(), "Failed to click Europe tile");
+        Assert.assertTrue(destinationPage.clickNextAndWaitForDate(), "Did not navigate to date step");
+
+        // Select via date picker (today+7, then +30)
+        Assert.assertTrue(destinationPage.selectDatesViaPickerRelative(7, 30),
+                "Failed to select dates via date picker (7/30)");
+
+        // Verify inclusive days (30 + 1 = 31) and proceed
+        int shownDays = destinationPage.waitForTripDaysOnNext(12);
+        Assert.assertTrue(shownDays >= 0, "Next button did not show a days count");
+        Assert.assertEquals(shownDays, 31, "Expected 31 inclusive days for 7/30 selection");
+        Assert.assertTrue(destinationPage.clickNextOnDateAndWaitForScreenTitle(),
+                "Next component screen title was not visible after clicking Next");
     }
     
 
     @Test
-    public void selectEurope_verifyAbsoluteDatesAndTripDays() {
+    public void dateValidation_endBeforeStart_showsValidationOrDisablesNext() {
         DestinationPage destinationPage = openDestination();
         Assert.assertTrue(destinationPage.clickEurope(), "Failed to click Europe tile");
         Assert.assertTrue(destinationPage.clickNextAndWaitForDate(), "Did not navigate to date step");
 
-        // Set specific dates per screenshot: start 27/01/2026, end 28/02/2026 (expected total ~33 days)
-        Assert.assertTrue(destinationPage.selectDatesAbsolute("27/01/2026", "28/02/2026"),
-                "Failed to set absolute dates");
+        // Pick a valid start (today+14), then click an end that is before start (start-1)
+        java.time.LocalDate start = DateUtils.todayPlusDays(14);
+        java.time.LocalDate invalidEnd = start.minusDays(1);
 
-        // Prefer robust verification: check the Next button's days matches inclusive difference (33)
-        int shownDays = destinationPage.waitForTripDaysOnNext(10);
-        System.out.println("Trip days shown on Next button: " + shownDays);
-        Assert.assertTrue(shownDays >= 0, "Next button did not show a days count");
-        Assert.assertTrue(Math.abs(shownDays - 33) <= 0,
-                "Trip days shown (" + shownDays + ") do not match expected 33");
-    }
+        // Open calendar and click specific ISO dates
+        Assert.assertTrue(destinationPage.clickCalendarDayIso(start.toString()),
+                "Failed to click start day via picker");
+        Assert.assertTrue(destinationPage.clickCalendarDayIso(invalidEnd.toString()),
+                "Failed to click end day via picker");
 
-    @Test
-    public void selectEurope_verifyAbsoluteDatesAndTripDays_31Days() {
-        DestinationPage destinationPage = openDestination();
-        Assert.assertTrue(destinationPage.clickEurope(), "Failed to click Europe tile");
-        Assert.assertTrue(destinationPage.clickNextAndWaitForDate(), "Did not navigate to date step");
-
-        // Start: 28/01/2026, End: 27/02/2026 -> inclusive days should be 31
-        Assert.assertTrue(destinationPage.selectDatesAbsolute("28/01/2026", "27/02/2026"),
-                "Failed to set absolute dates");
-
-        int shownDays = destinationPage.waitForTripDaysOnNext(12);
-        System.out.println("Trip days shown on Next button (28/01 - 27/02): " + shownDays);
-        Assert.assertTrue(shownDays >= 0, "Next button did not show a days count");
-        Assert.assertEquals(shownDays, 31, "Trip days shown does not equal expected 31");
-
-        // Optional double-check against inputs (inclusive)
-        Assert.assertTrue(destinationPage.verifyTripDaysOnNextMatchesInputs(0),
-                "Inclusive trip days derived from inputs do not match UI days");
-    }
-
-    @Test
-    public void selectEurope_setDates_andProceedToNextComponent() {
-        DestinationPage destinationPage = openDestination();
-        Assert.assertTrue(destinationPage.clickEurope(), "Failed to click Europe tile");
-        Assert.assertTrue(destinationPage.clickNextAndWaitForDate(), "Did not navigate to date step");
-        Assert.assertTrue(destinationPage.selectDatesAbsolute("27/01/2026", "28/02/2026"),
-                "Failed to set dates");
-        Assert.assertTrue(destinationPage.clickNextOnDateAndWaitForScreenTitle(),
-                "Next component screen title was not visible after clicking Next");
+        // Behavior-based validation: clicking Next should keep us on the Date step
+        Assert.assertTrue(destinationPage.clickNextOnDate(), "Failed to click Next on Date step");
+        Assert.assertTrue(destinationPage.isOnDateStep(),
+                "Should remain on the Date step when end date is before start date");
     }
 }

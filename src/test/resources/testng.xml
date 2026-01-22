@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
 
-<suite name="Travel Insurance Automation Suite" verbose="2" parallel="false">
-    
-    <test name="Travel Insurance Tests">
+<suite name="Travel Insurance Automation Suite" verbose="2" parallel="false" preserve-order="true">
+    <!-- Global suite for the travel policy flow. Tests rely on BaseClass for driver/config lifecycle. -->
+
+    <test name="Destination Flow and Date Step">
+        <classes>
+            <class name="testCases.DestinationPageTest"/>
+            <class name="testCases.DateSectionTest"/>
+        </classes>
     </test>
 
 </suite>

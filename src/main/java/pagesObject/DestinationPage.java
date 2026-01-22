@@ -12,6 +12,8 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import org.openqa.selenium.Keys;
+import utils.DateUtils;
+import pagesObject.components.DateSection;
 
 /**
  * Page Object for the Travel Policy Destination step
@@ -20,6 +22,12 @@ public class DestinationPage {
     private final WebDriver driver;
     private static final String EXPECTED_PATH = "/travel-policy/wizard/destination";
     private static final String NEXT_PATH = "/travel-policy/wizard/date";
+
+    // Timeouts and scroll offsets (avoid magic numbers)
+    private static final int WAIT_SHORT_SEC = 10;
+    private static final int WAIT_MEDIUM_SEC = 30;
+    private static final int WAIT_LONG_SEC = 60;
+    private static final int SCROLL_NUDGE_PX = 150;
 
     private final By usaTile = By.xpath("//div[contains(text(),'ארה')]");
     private final By canadaTile = By.xpath("//div[contains(text(),'קנדה')]");
@@ -33,6 +41,7 @@ public class DestinationPage {
     private final By nextButtonById = By.id("nextButton");
     private final By antarcticaWarningYesBtn = By.xpath("//button[@data-hrl-bo='warningPopup-yes-button']");
     private final By screenTitle = By.xpath("//h2[@data-hrl-bo='screen_title']");
+    private final By destinationGeneralError = By.xpath("//div[@data-hrl-bo='general_error']");
     // Date inputs (use union to support alternative attributes on the site)
     private final By startDateInput = By.xpath("//input[@id='travel_start_date' or @name='start']");
     private final By endDateInput = By.xpath("//input[@name='end' or @id='travel_end_date']");
@@ -43,6 +52,8 @@ public class DestinationPage {
     private final By genericSelectedBadges = By.xpath("//*[contains(@class,'selected') and normalize-space(text())!='']");
     // Summary text showing total days (Hebrew: "סה\"כ: NN ימים"). We'll search broadly for elements containing "ימים"
     private final By daysSummaryCandidates = By.xpath("//*[contains(normalize-space(text()), 'ימים')]");
+    // Date picker next-month arrow (per user-provided locator)
+    private final By nextMonthArrow = By.xpath("(//button[@data-hrl-bo='arrow-forward' and @aria-label='לעבור לחודש הבא'])[2]");
 
     public DestinationPage(WebDriver driver) {
         this.driver = driver;
@@ -53,8 +64,13 @@ public class DestinationPage {
         return url != null && url.contains(EXPECTED_PATH);
     }
 
+    /** Exposes the Date section component for date interactions on the Date step. */
+    public DateSection getDateSection() {
+        return new DateSection(driver);
+    }
+
     private boolean click(By locator) {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_MEDIUM_SEC));
         WebElement el = wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", el);
         try {
@@ -73,6 +89,12 @@ public class DestinationPage {
         return nextEnabled;
     }
 
+    /** Generic region click to reduce duplication (clicks tile that contains given text). */
+    public boolean clickRegionByPartialText(String partialTextHebrew) {
+        By dynamic = By.xpath("//div[contains(text(), '" + partialTextHebrew + "')]");
+        return click(dynamic);
+    }
+
     private boolean isNextEnabled() {
         try {
             WebElement b = driver.findElement(nextButton);
@@ -87,9 +109,32 @@ public class DestinationPage {
         }
     }
 
+    /**
+     * On the Destination step, attempt to click Next without selecting a region
+     * and return the general error text if displayed.
+     */
+    public String clickNextWithoutRegionAndGetError() {
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
+            WebElement btn = wait.until(ExpectedConditions.visibilityOfElementLocated(nextButton));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", btn);
+            try {
+                wait.until(ExpectedConditions.elementToBeClickable(btn));
+                new Actions(driver).moveToElement(btn).click().build().perform();
+            } catch (Exception e) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btn);
+            }
+            WebElement error = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC))
+                    .until(ExpectedConditions.visibilityOfElementLocated(destinationGeneralError));
+            return error.getText();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Reads the total days displayed on the Next button (id="nextButton"). */
     public int getTripDaysFromNextButton() {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
         WebElement btn = wait.until(ExpectedConditions.visibilityOfElementLocated(nextButtonById));
         String text = btn.getText();
         // Extract first integer found
@@ -107,9 +152,9 @@ public class DestinationPage {
         int fromButton = -1;
         try {
             // Ensure the area is visible
-            WebElement btn = new WebDriverWait(driver, Duration.ofSeconds(10))
+            WebElement btn = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC))
                     .until(ExpectedConditions.visibilityOfElementLocated(nextButtonById));
-            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'}); window.scrollBy(0, 150);", btn);
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'}); window.scrollBy(0, " + SCROLL_NUDGE_PX + ");", btn);
             fromButton = getTripDaysFromNextButton();
             if (fromButton >= 0) return fromButton;
             // Try reading container text around the button
@@ -177,7 +222,7 @@ public class DestinationPage {
                 // Nudge the viewport near the button each iteration
                 try {
                     WebElement btn = driver.findElement(nextButtonById);
-                    ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'}); window.scrollBy(0, 150);", btn);
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'}); window.scrollBy(0, " + SCROLL_NUDGE_PX + ");", btn);
                 } catch (Exception ignored) {}
                 val = getTripDaysFromUI();
                 if (val >= 0) return val;
@@ -264,19 +309,17 @@ public class DestinationPage {
      * or add buffer days; provide a tolerance to allow small differences.
      */
     public boolean verifyTripDaysOnNextMatchesInputs(int toleranceDays) {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
         try {
             WebElement startInput = wait.until(ExpectedConditions.visibilityOfElementLocated(startDateInput));
             WebElement endInput = wait.until(ExpectedConditions.visibilityOfElementLocated(endDateInput));
             String startVal = startInput.getAttribute("value");
             String endVal = endInput.getAttribute("value");
-            LocalDate start = LocalDate.parse(startVal, fmt);
-            LocalDate end = LocalDate.parse(endVal, fmt);
-            long diff = java.time.temporal.ChronoUnit.DAYS.between(start, end);
-            long inclusive = diff + 1; // Site appears to count inclusively (both start and end days)
+            LocalDate start = DateUtils.parseUi(startVal);
+            LocalDate end = DateUtils.parseUi(endVal);
+            long inclusive = DateUtils.inclusiveDays(start, end); // Site counts both start and end days
             int shown = getTripDaysFromUI();
-            System.out.println("Computed diff days=" + diff + ", inclusive=" + inclusive + ", UI shows=" + shown);
+            System.out.println("Computed inclusive days=" + inclusive + ", UI shows=" + shown);
             return shown >= 0 && Math.abs(shown - inclusive) <= Math.max(0, toleranceDays);
         } catch (Exception e) {
             return false;
@@ -311,7 +354,7 @@ public class DestinationPage {
 
 
     public boolean clickNextAndWaitForDate() {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(60));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_LONG_SEC));
         WebElement btn = wait.until(ExpectedConditions.visibilityOfElementLocated(nextButton));
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", btn);
         // Ensure the Next button is enabled
@@ -325,7 +368,7 @@ public class DestinationPage {
                 ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btn);
             }
             try {
-                return new WebDriverWait(driver, Duration.ofSeconds(10))
+                return new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC))
                         .until(ExpectedConditions.urlContains(NEXT_PATH));
             } catch (Exception retry) {
                 System.out.println("URL did not change after click attempt " + (i+1) + ", retrying...");
@@ -354,6 +397,115 @@ public class DestinationPage {
         }
     }
 
+    /** Returns whether the Next button on the current screen appears enabled (generic check by id). */
+    public boolean isNextEnabledOnCurrentStep() {
+        try {
+            WebElement b = driver.findElement(nextButtonById);
+            String cls = b.getAttribute("class");
+            String disabledAttr = b.getAttribute("disabled");
+            String ariaDisabled = b.getAttribute("aria-disabled");
+            boolean disabledByClass = cls != null && cls.toLowerCase().contains("disabled");
+            boolean disabled = (disabledAttr != null) || (ariaDisabled != null && ariaDisabled.equalsIgnoreCase("true"));
+            return b.isDisplayed() && b.isEnabled() && !disabled && !disabledByClass;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Clicks a specific calendar day by ISO date (yyyy-MM-dd) using data-hrl-bo attribute. */
+    public boolean clickCalendarDayIso(String isoDate) {
+        try {
+            By day = By.xpath("//button[@data-hrl-bo='" + isoDate + "']");
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_MEDIUM_SEC));
+            // Try up to 6 months ahead by clicking next-month arrow until the day becomes visible
+            for (int i = 0; i < 6; i++) {
+                try {
+                    WebElement el = wait.until(ExpectedConditions.visibilityOfElementLocated(day));
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", el);
+                    try {
+                        wait.until(ExpectedConditions.elementToBeClickable(el));
+                        new Actions(driver).moveToElement(el).click().build().perform();
+                    } catch (Exception e) {
+                        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", el);
+                    }
+                    return true;
+                } catch (Exception notVisible) {
+                    // Move to next month and retry
+                    try {
+                        WebElement arrow = wait.until(ExpectedConditions.elementToBeClickable(nextMonthArrow));
+                        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", arrow);
+                        arrow.click();
+                        try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+                    } catch (Exception arrowFail) {
+                        // Cannot advance months; break
+                        break;
+                    }
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Selects dates via date picker by clicking day buttons (today+offset and +length). */
+    public boolean selectDatesViaPickerRelative(int startOffsetDays, int tripLengthDays) {
+        LocalDate start = DateUtils.todayPlusDays(Math.max(0, startOffsetDays));
+        LocalDate end = start.plusDays(Math.max(1, tripLengthDays));
+        String startIso = start.toString(); // yyyy-MM-dd
+        String endIso = end.toString();
+        // Focus inputs to ensure calendar is open/visible
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
+            WebElement startInputEl = wait.until(ExpectedConditions.visibilityOfElementLocated(startDateInput));
+            startInputEl.click();
+        } catch (Exception ignored) {}
+        boolean s = clickCalendarDayIso(startIso);
+        boolean e = clickCalendarDayIso(endIso);
+        // Verify inputs updated
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
+            WebElement startInputEl = wait.until(ExpectedConditions.visibilityOfElementLocated(startDateInput));
+            WebElement endInputEl = wait.until(ExpectedConditions.visibilityOfElementLocated(endDateInput));
+            String sv = startInputEl.getAttribute("value");
+            String ev = endInputEl.getAttribute("value");
+            String expectedS = DateUtils.formatUi(start);
+            String expectedE = DateUtils.formatUi(end);
+            System.out.println("Picker-selected dates -> start: " + sv + ", end: " + ev);
+            return s && e && expectedS.equals(sv) && expectedE.equals(ev);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    /** Clicks Next on the Date step without waiting for the next component. */
+    public boolean clickNextOnDate() {
+        try {
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_SHORT_SEC));
+            WebElement btn = wait.until(ExpectedConditions.visibilityOfElementLocated(nextButtonById));
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", btn);
+            try {
+                wait.until(ExpectedConditions.elementToBeClickable(btn));
+                new Actions(driver).moveToElement(btn).click().build().perform();
+            } catch (Exception e) {
+                ((JavascriptExecutor) driver).executeScript("arguments[0].click();", btn);
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Checks if current URL indicates we are still on the Date step. */
+    public boolean isOnDateStep() {
+        try {
+            String url = driver.getCurrentUrl();
+            return url != null && url.contains(NEXT_PATH);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /**
      * Selects start and end dates using the inputs on the Date step.
      * - Start: today + offsetDays (minimum 7 days recommended)
@@ -361,13 +513,12 @@ public class DestinationPage {
      * Dates are set in dd/MM/yyyy format to match the UI placeholder.
      */
     public boolean selectDatesRelative(int offsetDaysFromToday, int tripLengthDays) {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        LocalDate start = LocalDate.now().plusDays(Math.max(0, offsetDaysFromToday));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_MEDIUM_SEC));
+        LocalDate start = DateUtils.todayPlusDays(Math.max(0, offsetDaysFromToday));
         LocalDate end = start.plusDays(Math.max(1, tripLengthDays));
 
-        String startStr = start.format(fmt);
-        String endStr = end.format(fmt);
+        String startStr = DateUtils.formatUi(start);
+        String endStr = DateUtils.formatUi(end);
 
         WebElement startInput = wait.until(ExpectedConditions.visibilityOfElementLocated(startDateInput));
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", startInput);
@@ -391,7 +542,7 @@ public class DestinationPage {
 
     /** Set specific dates in dd/MM/yyyy format. */
     public boolean selectDatesAbsolute(String startStr, String endStr) {
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(WAIT_MEDIUM_SEC));
         WebElement startInput = wait.until(ExpectedConditions.visibilityOfElementLocated(startDateInput));
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", startInput);
         setInputValue(startInput, startStr);

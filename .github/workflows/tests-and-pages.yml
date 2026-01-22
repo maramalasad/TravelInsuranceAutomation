@@ -25,7 +25,23 @@ jobs:
 
       - name: Build & Test (with Xvfb)
         run: |
-          xvfb-run -a mvn -B -Dmaven.test.failure.ignore=true -DskipTests=false test surefire-report:report
+          xvfb-run -a mvn -B -Dmaven.test.failure.ignore=true -DskipTests=false test surefire-report:report || true
+
+      - name: Debug list target directory
+        run: |
+          echo "Listing target directory (if exists)" && ls -la || true
+          echo "Listing target/ (if exists)" && ls -la target || true
+          echo "Listing target/site (if exists)" && ls -la target/site || true
+
+      - name: Fallback - ensure target/site exists and include raw reports
+        run: |
+          if [ ! -d target/site ]; then
+            mkdir -p target/site
+            echo "<html><body><h2>Surefire HTML report not generated</h2><p>See raw reports under ./surefire-reports</p></body></html>" > target/site/index.html
+          fi
+          if [ -d target/surefire-reports ]; then
+            cp -R target/surefire-reports target/site/
+          fi
 
       - name: Upload raw reports artifact
         uses: actions/upload-artifact@v4

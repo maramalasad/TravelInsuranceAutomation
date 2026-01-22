@@ -43,6 +43,12 @@ jobs:
             cp -R target/surefire-reports target/site/
           fi
 
+      - name: Make surefire-report the landing page if present
+        run: |
+          if [ -f target/site/surefire-report.html ]; then
+            cp target/site/surefire-report.html target/site/index.html
+          fi
+
       - name: Upload raw reports artifact
         uses: actions/upload-artifact@v4
         with:
